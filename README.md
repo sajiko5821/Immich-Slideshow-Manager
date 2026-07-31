@@ -44,9 +44,8 @@ services:
   immich_slideshow_manager:
     build: .
     container_name: immich_slideshow_manager
-    # Optional: Set your Immich URL and API Key securely via environment variables
+    # Optional: Set your Immich API Key securely via environment variables
     # environment:
-    #   - IMMICH_URL=https://immich.yourdomain.com
     #   - IMMICH_API_KEY=your_api_key_here
     ports:
       - "5050:5050"

@@ -24,8 +24,6 @@ def load_config():
 def save_config(config):
     # Ensure we don't accidentally save env variables back to disk if they were injected
     config_to_save = config.copy()
-    if os.environ.get('IMMICH_URL') and 'immich_url' in config_to_save:
-        del config_to_save['immich_url']
     if os.environ.get('IMMICH_API_KEY') and 'immich_api_key' in config_to_save:
         del config_to_save['immich_api_key']
 
@@ -41,8 +39,6 @@ def trigger_job(job_id, job_data):
     try:
         # Inject ENV vars if they exist so transform.py can use them
         job_data_to_run = job_data.copy()
-        if os.environ.get('IMMICH_URL'):
-            job_data_to_run['immich_url'] = os.environ.get('IMMICH_URL')
         if os.environ.get('IMMICH_API_KEY'):
             job_data_to_run['immich_api_key'] = os.environ.get('IMMICH_API_KEY')
             
@@ -98,6 +94,12 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.svg', mimetype='image/svg+xml')
 
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    return jsonify({
+        'env_api_key': bool(os.environ.get('IMMICH_API_KEY'))
+    })
+
 @app.route('/api/jobs', methods=['GET', 'POST'])
 def handle_jobs():
     global config
@@ -109,10 +111,7 @@ def handle_jobs():
             job_copy['last_status'] = status_info['status']
             job_copy['last_message'] = status_info['message']
             
-            # Mask API key if it's from env or inject env URL
-            if os.environ.get('IMMICH_URL'):
-                job_copy['immich_url'] = os.environ.get('IMMICH_URL')
-                job_copy['env_url'] = True
+            # Mask API key if it's from env
             if os.environ.get('IMMICH_API_KEY'):
                 job_copy['api_key'] = '*******************'
                 job_copy['env_api_key'] = True
