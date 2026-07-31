@@ -1,7 +1,9 @@
 let currentJobs = [];
 let pollInterval;
+let envSettings = { env_api_key: false };
 
-function init() {
+async function init() {
+    await loadSettings();
     loadJobs();
     pollInterval = setInterval(loadJobs, 5000);
 
@@ -10,6 +12,15 @@ function init() {
     document.getElementById('btn-cancel').addEventListener('click', closeModal);
     document.getElementById('config-form').addEventListener('submit', saveJob);
     document.getElementById('btn-test-conn').addEventListener('click', testConnection);
+}
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/settings');
+        envSettings = await response.json();
+    } catch (e) {
+        console.error('Failed to load settings', e);
+    }
 }
 
 async function loadJobs() {
@@ -99,6 +110,13 @@ function openModal() {
     document.getElementById('job-id').value = '';
     document.getElementById('modal-title').textContent = 'New Configuration';
     document.getElementById('test-result').style.display = 'none';
+    
+    // Hide API key group entirely if managed by environment variables
+    const apiGroup = document.getElementById('api-key-group');
+    if (apiGroup) {
+        apiGroup.style.display = envSettings.env_api_key ? 'none' : 'block';
+    }
+    
     document.getElementById('config-modal').classList.remove('hidden');
 }
 
@@ -119,23 +137,10 @@ function editJob(id) {
     document.getElementById('job-time').value = job.sync_time || '02:00';
     document.getElementById('test-result').style.display = 'none';
     
-    // Disable inputs if set by environment variables
-    const urlInput = document.getElementById('job-immich-url');
-    const apiInput = document.getElementById('job-api-key');
-    if (job.env_url) {
-        urlInput.disabled = true;
-        urlInput.title = "Configured via Docker environment variable";
-    } else {
-        urlInput.disabled = false;
-        urlInput.title = "";
-    }
-    
-    if (job.env_api_key) {
-        apiInput.disabled = true;
-        apiInput.title = "Configured via Docker environment variable";
-    } else {
-        apiInput.disabled = false;
-        apiInput.title = "";
+    // Hide API key group entirely if managed by environment variables
+    const apiGroup = document.getElementById('api-key-group');
+    if (apiGroup) {
+        apiGroup.style.display = envSettings.env_api_key ? 'none' : 'block';
     }
 
     document.getElementById('modal-title').textContent = 'Edit Configuration';
