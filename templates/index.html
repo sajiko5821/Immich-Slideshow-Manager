@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immich Digital Photo Frame</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="glass-container main-wrapper">
+        <header>
+            <div class="logo">
+                <i class="fa-solid fa-images"></i>
+                <h1>Immich Frame Manager</h1>
+            </div>
+            <button id="btn-new-config" class="btn primary">
+                <i class="fa-solid fa-plus"></i> New Configuration
+            </button>
+        </header>
+
+        <main>
+            <div class="status-panel">
+                <h2><i class="fa-solid fa-server"></i> Active Jobs</h2>
+                <div id="jobs-container" class="jobs-grid">
+                    <!-- Jobs will be rendered here via JS -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for New/Edit Config -->
+    <div id="config-modal" class="modal hidden">
+        <div class="modal-content glass-container">
+            <div class="modal-header">
+                <h2 id="modal-title">Configure Slideshow</h2>
+                <button id="btn-close-modal" class="icon-btn"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <form id="config-form">
+                <input type="hidden" id="job-id">
+                
+                <div class="form-group">
+                    <label for="job-name">Configuration Name</label>
+                    <input type="text" id="job-name" placeholder="e.g. Living Room Display" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="job-immich-url">Immich Album URL</label>
+                    <input type="url" id="job-immich-url" placeholder="https://immich.yourdomain.com/albums/..." required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="job-api-key">
+                        Immich API Key
+                        <i class="fa-solid fa-circle-info info-icon" title="Required privileges: Album (Read) and Asset (Read)"></i>
+                    </label>
+                    <input type="password" id="job-api-key" placeholder="Enter your API Key" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="job-dest">Destination Path (e.g. /mnt/remotes/...)</label>
+                        <input type="text" id="job-dest" placeholder="/slideshow/office" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="job-num">Number of Images</label>
+                        <input type="number" id="job-num" min="1" max="500" value="30" required>
+                    </div>
+                </div>
+
+                <div id="test-result" class="test-result hidden"></div>
+
+                <div class="modal-actions">
+                    <button type="button" id="btn-test-conn" class="btn secondary">Test Connection</button>
+                    <div class="action-right">
+                        <button type="button" id="btn-cancel" class="btn secondary">Cancel</button>
+                        <button type="submit" class="btn primary">Save Configuration</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  immich_frame_manager:
+    build: .
+    container_name: immich_frame_manager
+    ports:
+      - "5050:5050"
+    volumes:
+      # Map a local folder so your configurations persist container updates
+      - ./config:/app/config
+      # Map your Home Assistant / WWW paths for multiple destinations
+      - /path/to/homeassistant/www/slideshow/office:/slideshow/office:rw
+      - /path/to/homeassistant/www/slideshow/livingroom:/slideshow/livingroom:rw
+    restart: unless-stopped
