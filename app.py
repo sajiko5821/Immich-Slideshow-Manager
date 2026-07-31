@@ -6,7 +6,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from transform import process_job, fetch_album_assets
 
 app = Flask(__name__)
-CONFIG_FILE = 'config.json'
+
+DATA_DIR = 'data'
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR, exist_ok=True)
+CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -18,8 +22,15 @@ def load_config():
     return {'jobs': []}
 
 def save_config(config):
+    # Ensure we don't accidentally save env variables back to disk if they were injected
+    config_to_save = config.copy()
+    if os.environ.get('IMMICH_URL') and 'immich_url' in config_to_save:
+        del config_to_save['immich_url']
+    if os.environ.get('IMMICH_API_KEY') and 'immich_api_key' in config_to_save:
+        del config_to_save['immich_api_key']
+
     with open(CONFIG_FILE, 'w') as f:
-        json.dump(config, f, indent=4)
+        json.dump(config_to_save, f, indent=4)
 
 config = load_config()
 
@@ -28,26 +39,64 @@ job_status = {}
 def trigger_job(job_id, job_data):
     job_status[job_id] = {'status': 'running', 'message': 'Processing images...'}
     try:
-        count = process_job(job_data)
+        # Inject ENV vars if they exist so transform.py can use them
+        job_data_to_run = job_data.copy()
+        if os.environ.get('IMMICH_URL'):
+            job_data_to_run['immich_url'] = os.environ.get('IMMICH_URL')
+        if os.environ.get('IMMICH_API_KEY'):
+            job_data_to_run['immich_api_key'] = os.environ.get('IMMICH_API_KEY')
+            
+        count = process_job(job_data_to_run)
         job_status[job_id] = {'status': 'success', 'message': f'Processed {count} images.'}
     except Exception as e:
         job_status[job_id] = {'status': 'error', 'message': str(e)}
 
-def run_scheduled_jobs():
-    print("Running scheduled jobs...")
-    for job in config.get('jobs', []):
-        try:
-            process_job(job)
-        except Exception as e:
-            print(f"Scheduled job {job.get('name')} failed: {e}")
+def schedule_job(job):
+    job_id = f"sync_job_{job['id']}"
+    sync_time = job.get('sync_time', '02:00')
+    try:
+        hour, minute = map(int, sync_time.split(':'))
+    except ValueError:
+        hour, minute = 2, 0
+    
+    # Remove existing job if it exists to replace it
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+        
+    scheduler.add_job(
+        func=process_job,
+        trigger="cron",
+        hour=hour,
+        minute=minute,
+        id=job_id,
+        args=[job],
+        replace_existing=True
+    )
+    print(f"Scheduled job {job['name']} to run daily at {hour:02d}:{minute:02d}.")
+
+def unschedule_job(job_id):
+    sched_id = f"sync_job_{job_id}"
+    if scheduler.get_job(sched_id):
+        scheduler.remove_job(sched_id)
+        print(f"Removed scheduled job {sched_id}.")
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=run_scheduled_jobs, trigger="cron", hour=2, minute=0)
 scheduler.start()
+
+# Schedule all loaded jobs on startup
+for job in config.get('jobs', []):
+    schedule_job(job)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    from flask import send_from_directory
+    return send_from_directory(app.root_path, 'index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    from flask import send_from_directory
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.svg', mimetype='image/svg+xml')
 
 @app.route('/api/jobs', methods=['GET', 'POST'])
 def handle_jobs():
@@ -59,6 +108,15 @@ def handle_jobs():
             status_info = job_status.get(job['id'], {'status': 'idle', 'message': ''})
             job_copy['last_status'] = status_info['status']
             job_copy['last_message'] = status_info['message']
+            
+            # Mask API key if it's from env or inject env URL
+            if os.environ.get('IMMICH_URL'):
+                job_copy['immich_url'] = os.environ.get('IMMICH_URL')
+                job_copy['env_url'] = True
+            if os.environ.get('IMMICH_API_KEY'):
+                job_copy['api_key'] = '*******************'
+                job_copy['env_api_key'] = True
+                
             jobs_with_status.append(job_copy)
         return jsonify(jobs_with_status)
     
@@ -71,10 +129,12 @@ def handle_jobs():
             'immich_url': job_data.get('immich_url', ''),
             'api_key': job_data.get('api_key', ''),
             'dest_dir': job_data.get('dest_dir', ''),
-            'num_images': int(job_data.get('num_images', 30))
+            'num_images': int(job_data.get('num_images', 30)),
+            'sync_time': job_data.get('sync_time', '02:00')
         }
         config['jobs'].append(new_job)
         save_config(config)
+        schedule_job(new_job)
         return jsonify({'success': True, 'job': new_job})
 
 @app.route('/api/jobs/<int:job_id>', methods=['PUT', 'DELETE'])
@@ -83,6 +143,7 @@ def manage_job(job_id):
     if request.method == 'DELETE':
         config['jobs'] = [j for j in config['jobs'] if j['id'] != job_id]
         save_config(config)
+        unschedule_job(job_id)
         if job_id in job_status:
             del job_status[job_id]
         return jsonify({'success': True})
@@ -96,9 +157,11 @@ def manage_job(job_id):
                     'immich_url': job_data.get('immich_url', job['immich_url']),
                     'api_key': job_data.get('api_key', job['api_key']),
                     'dest_dir': job_data.get('dest_dir', job['dest_dir']),
-                    'num_images': int(job_data.get('num_images', job['num_images']))
+                    'num_images': int(job_data.get('num_images', job['num_images'])),
+                    'sync_time': job_data.get('sync_time', job.get('sync_time', '02:00'))
                 })
                 save_config(config)
+                schedule_job(job)
                 return jsonify({'success': True, 'job': job})
         return jsonify({'success': False, 'error': 'Job not found'})
 

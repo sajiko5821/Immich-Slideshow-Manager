@@ -73,6 +73,10 @@ function renderJobs() {
                     <span>${job.num_images} images</span>
                 </div>
                 <div class="detail-item">
+                    <i class="fa-solid fa-clock"></i>
+                    <span>Daily at ${job.sync_time || '02:00'}</span>
+                </div>
+                <div class="detail-item">
                     <i class="fa-solid fa-display"></i>
                     <span>Dest: ${job.dest_dir}</span>
                 </div>
@@ -112,8 +116,28 @@ function editJob(id) {
     document.getElementById('job-api-key').value = job.api_key;
     document.getElementById('job-dest').value = job.dest_dir;
     document.getElementById('job-num').value = job.num_images;
+    document.getElementById('job-time').value = job.sync_time || '02:00';
     document.getElementById('test-result').style.display = 'none';
     
+    // Disable inputs if set by environment variables
+    const urlInput = document.getElementById('job-immich-url');
+    const apiInput = document.getElementById('job-api-key');
+    if (job.env_url) {
+        urlInput.disabled = true;
+        urlInput.title = "Configured via Docker environment variable";
+    } else {
+        urlInput.disabled = false;
+        urlInput.title = "";
+    }
+    
+    if (job.env_api_key) {
+        apiInput.disabled = true;
+        apiInput.title = "Configured via Docker environment variable";
+    } else {
+        apiInput.disabled = false;
+        apiInput.title = "";
+    }
+
     document.getElementById('modal-title').textContent = 'Edit Configuration';
     document.getElementById('config-modal').classList.remove('hidden');
 }
@@ -130,7 +154,8 @@ async function saveJob(e) {
         immich_url: document.getElementById('job-immich-url').value,
         api_key: document.getElementById('job-api-key').value,
         dest_dir: document.getElementById('job-dest').value,
-        num_images: document.getElementById('job-num').value
+        num_images: document.getElementById('job-num').value,
+        sync_time: document.getElementById('job-time').value
     };
     
     try {

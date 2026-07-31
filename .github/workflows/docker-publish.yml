@@ -1,0 +1,92 @@
+# ==============================================================================
+# WORKFLOW: Build and Push Docker Image
+# ------------------------------------------------------------------------------
+# DESCRIPTION:
+#   Automates the Docker build process and pushes images to GHCR.
+#
+# TRIGGERS:
+#   - Pushes to 'main' or 'master' branches.
+#   - Creation of Git tags (e.g., v1.0.0).
+#   - Pull Requests to 'main' (Build check only, no push).
+#
+# TAGGING STRATEGY:
+#   - 'latest' (Only for main/master branch pushes)
+#   - '<short-sha>' (For every build, providing an immutable version)
+#   - '<tag-name>' (When a Git tag is pushed)
+# ==============================================================================
+
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: ["main", "master", "dev"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Tag as 'latest' only on the main branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
+            # Tag as 'dev' only on dev branch
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+
+            # Tag with the Git tag (e.g., v1.0.0)
+            type=ref,event=tag
+
+      - name: Build and push Docker image (multi-arch)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Docker image (PR build check only)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

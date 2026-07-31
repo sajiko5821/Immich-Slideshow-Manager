@@ -1,14 +1,17 @@
 version: '3.8'
 
 services:
-  immich_frame_manager:
+  immich_slideshow_manager:
     build: .
-    container_name: immich_frame_manager
+    container_name: immich_slideshow_manager
+    # environment:
+    #   - IMMICH_URL=https://immich.yourdomain.com
+    #   - IMMICH_API_KEY=your_api_key_here
     ports:
       - "5050:5050"
     volumes:
-      # Map a local folder so your configurations persist container updates
-      - ./config:/app/config
+      # Map the Unraid appdata folder to store configuration
+      - /mnt/user/appdata/immich-slideshow-manager:/app/data
       # Map your Home Assistant / WWW paths for multiple destinations
       - /path/to/homeassistant/www/slideshow/office:/slideshow/office:rw
       - /path/to/homeassistant/www/slideshow/livingroom:/slideshow/livingroom:rw
