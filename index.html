@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Immich Digital Photo Frame</title>
+    <title>Immich Slideshow Manager</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=1">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -12,7 +13,7 @@
         <header>
             <div class="logo">
                 <i class="fa-solid fa-images"></i>
-                <h1>Immich Frame Manager</h1>
+                <h1>Immich Slideshow Manager</h1>
             </div>
             <button id="btn-new-config" class="btn primary">
                 <i class="fa-solid fa-plus"></i> New Configuration
@@ -68,6 +69,10 @@
                     <div class="form-group half">
                         <label for="job-num">Number of Images</label>
                         <input type="number" id="job-num" min="1" max="500" value="30" required>
+                    </div>
+                    <div class="form-group half">
+                        <label for="job-time">Sync Time</label>
+                        <input type="time" id="job-time" value="02:00" required>
                     </div>
                 </div>
 

@@ -1,51 +1,111 @@
-# Immich Digital Photo Frame Manager
+<p align="center">
+  <img src="static/favicon.svg" width="200" />
+</p>
 
-A beautiful, glassmorphism-styled web application to manage slideshow integrations between [Immich](https://immich.app/) and digital photo frames or Home Assistant dashboards.
+<h1 align="center">Immich Slideshow Manager</h1>
+
+[![Docker Image Version](https://img.shields.io/github/v/tag/sajiko5821/Immich-Digital-Photo-Frame?label=version&logo=docker&color=2496ED)](https://github.com/sajiko5821/Immich-Digital-Photo-Frame/pkgs/container/immich-digital-photo-frame)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/sajiko5821/Immich-Digital-Photo-Frame/docker-publish.yml?branch=main&label=build&logo=github)](https://github.com/sajiko5821/Immich-Digital-Photo-Frame/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Automates the fetching and management of images from an Immich album to serve them locally as a beautiful slideshow. Perfect for digital photo frames (or Home Assistant dashboards) where you want a locally cached, offline-tolerant, and lightweight viewer.
 
 ## Features
 
-- **Multi-Device Support**: Manage different slideshow configurations (e.g., Office, Living Room) from a single web interface.
-- **Direct API Downloads**: Photos are fetched directly from your Immich server over the network (no local disk mapping required for the source files!).
-- **Smart Image Processing**: Automatically resizes images, adds blurred backgrounds for mismatched aspect ratios, and corrects EXIF orientations.
-- **Automated Scheduling**: Runs all your slideshow sync jobs automatically every night at 2:00 AM using `APScheduler`.
+- 🖼️ Syncs photos seamlessly from a specific Immich album
+- 🗂️ Saves configuration directly to a persistent data directory
+- 🐳 Docker support with standard Unraid appdata mapping
+- ⏱️ Fully configurable scheduled sync jobs via a web UI
+- ✨ Modern, responsive web interface
 
-## Docker Installation
+## Quick Start with Docker
 
-1. Create a `docker-compose.yml` file:
+### Prerequisites
+
+- Docker & Docker Compose
+- An Immich Server running
+- Your Immich API Key
+
+### 1. Get your Immich API Key
+
+Find your API Key in Immich by navigating to **Account Settings > API Keys** and generating a new key.
+
+> [!IMPORTANT]
+> Ensure that the generated API Key has at least **Album** and **Asset** read permissions so that it can fetch the photos for your slideshow.
+
+### 2. Edit `docker-compose.yml`
+
+Update the ports or volume mappings as needed:
 
 ```yaml
 version: '3.8'
 
 services:
-  immich_frame_manager:
+  immich_slideshow_manager:
     build: .
-    container_name: immich_frame_manager
+    container_name: immich_slideshow_manager
+    # Optional: Set your Immich URL and API Key securely via environment variables
+    # environment:
+    #   - IMMICH_URL=https://immich.yourdomain.com
+    #   - IMMICH_API_KEY=your_api_key_here
     ports:
       - "5050:5050"
     volumes:
-      # Persistent config folder
-      - ./config:/app/config
-      # Map your Home Assistant WWW paths
-      - /path/to/homeassistant/www/slideshow/office:/slideshow/office:rw
-      - /path/to/homeassistant/www/slideshow/livingroom:/slideshow/livingroom:rw
+      # Map the Unraid appdata folder to store configuration
+      - /mnt/user/appdata/immich-slideshow-manager:/app/data
+      # Map your local paths for the slideshow destinations
+      - /mnt/user/appdata/homeassistant/www/slideshow/office:/slideshow/office:rw
+      - /mnt/user/appdata/homeassistant/www/slideshow/livingroom:/slideshow/livingroom:rw
     restart: unless-stopped
 ```
 
-2. Run `docker-compose up -d`.
-3. Open your browser to `http://<your-server-ip>:5050`.
-4. Click **New Configuration** to add a job (e.g., Living Room).
-   - Provide the specific Immich Album URL.
-   - Provide your API Key.
-   - Destination Directory (mapped in Docker) e.g., `/slideshow/livingroom`.
-
-5. Click **Sync Now** to process immediately, or let the background scheduler handle it every night at 2:00 AM!
-
-## Running Locally (Mac/Linux)
+### 3. Start the container
 
 ```bash
+docker-compose up -d
+docker-compose logs -f immich_slideshow_manager
+```
+
+### 4. Configure via Web UI
+
+Navigate to `http://YOUR_SERVER_IP:5050` in your browser. From here, you can:
+- Input your Immich URL and API Key
+- Provide the Album ID you want to sync
+- Specify the destination folder path (mapped in docker-compose)
+- Add a scheduled job by specifying a specific time (e.g., `03:00` for 3 AM daily)
+
+## Local Development
+
+### Requirements
+
+- Python 3.11+
+
+### Installation
+
+```bash
+# Create a virtual environment
 python3 -m venv venv
 source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
-PORT=5050 python app.py
 ```
-Open `http://localhost:5050` in your browser.
+
+### Run
+
+```bash
+# Start the Flask development server
+python app.py
+```
+
+## Troubleshooting
+
+### Config not saving
+Ensure the `/app/data` directory mapping is correctly bound to a persistent folder on your host machine, and that Docker has write permissions to that directory.
+
+### Sync failing
+Check the Flask server logs or Docker logs. Ensure that your Immich URL includes `http://` or `https://` and does not end with a trailing slash, and that the API key has album read permissions.
+
+## License
+
+MIT
