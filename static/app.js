@@ -113,8 +113,12 @@ function openModal() {
     
     // Hide API key group entirely if managed by environment variables
     const apiGroup = document.getElementById('api-key-group');
+    const apiKeyInput = document.getElementById('job-api-key');
     if (apiGroup) {
         apiGroup.style.display = envSettings.env_api_key ? 'none' : 'block';
+        if (envSettings.env_api_key && apiKeyInput) {
+            apiKeyInput.removeAttribute('required');
+        }
     }
     
     document.getElementById('config-modal').classList.remove('hidden');
@@ -139,8 +143,12 @@ function editJob(id) {
     
     // Hide API key group entirely if managed by environment variables
     const apiGroup = document.getElementById('api-key-group');
+    const apiKeyInput = document.getElementById('job-api-key');
     if (apiGroup) {
         apiGroup.style.display = envSettings.env_api_key ? 'none' : 'block';
+        if (envSettings.env_api_key && apiKeyInput) {
+            apiKeyInput.removeAttribute('required');
+        }
     }
 
     document.getElementById('modal-title').textContent = 'Edit Configuration';
