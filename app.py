@@ -40,7 +40,7 @@ def trigger_job(job_id, job_data):
         # Inject ENV vars if they exist so transform.py can use them
         job_data_to_run = job_data.copy()
         if os.environ.get('IMMICH_API_KEY'):
-            job_data_to_run['immich_api_key'] = os.environ.get('IMMICH_API_KEY')
+            job_data_to_run['api_key'] = os.environ.get('IMMICH_API_KEY')
             
         count = process_job(job_data_to_run)
         job_status[job_id] = {'status': 'success', 'message': f'Processed {count} images.'}
@@ -178,10 +178,10 @@ def trigger_job_endpoint(job_id):
 def test_connection():
     data = request.json
     immich_url = data.get('immich_url')
-    api_key = data.get('api_key')
+    api_key = data.get('api_key') or os.environ.get('IMMICH_API_KEY')
     
     if not immich_url or not api_key:
-        return jsonify({'success': False, 'error': 'Missing URL or API Key.'})
+        return jsonify({'success': False, 'error': 'Please enter both URL and API Key (or set the IMMICH_API_KEY environment variable).'})
         
     try:
         assets, corrected_url = fetch_album_assets(immich_url, api_key)

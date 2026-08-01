@@ -31,7 +31,7 @@ Automates the fetching and management of images from an Immich album to serve th
 Find your API Key in Immich by navigating to **Account Settings > API Keys** and generating a new key.
 
 > [!IMPORTANT]
-> Ensure that the generated API Key has at least **Album** and **Asset** read permissions so that it can fetch the photos for your slideshow.
+> Ensure that the generated API Key has at least **Album (Read)** and **Asset (Download)** permissions so that it can fetch the photos for your slideshow.
 
 ### 2. Edit `docker-compose.yml`
 
