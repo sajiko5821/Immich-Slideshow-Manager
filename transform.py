@@ -158,7 +158,10 @@ def process_job(job):
         num_images = 30
         
     if not all([immich_url, api_key, dest_dir]):
-        raise ValueError(f"Job is missing required fields. Job data: {job}")
+        safe_job = job.copy()
+        if 'api_key' in safe_job and safe_job['api_key']:
+            safe_job['api_key'] = '*******************'
+        raise ValueError(f"Job is missing required fields. Job data: {safe_job}")
 
     target_w = 16
     target_h = 10

@@ -215,7 +215,7 @@ async function testConnection() {
     const resultDiv = document.getElementById('test-result');
     const btn = document.getElementById('btn-test-conn');
     
-    if (!url || !apiKey) {
+    if (!url || (!apiKey && !envSettings.env_api_key)) {
         resultDiv.style.display = 'block';
         resultDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
         resultDiv.style.color = '#fca5a5';
