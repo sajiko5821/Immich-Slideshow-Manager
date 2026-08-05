@@ -7,6 +7,12 @@ import time
 import logging
 from PIL import Image, ImageFilter, ImageEnhance, ExifTags
 
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass
+
 logger = logging.getLogger('immich_slideshow.transform')
 
 def fetch_album_assets(url, api_key):
