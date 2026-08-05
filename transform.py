@@ -202,6 +202,10 @@ def process_job(job):
     logger.info(f"Target URL: {immich_url}")
     logger.info(f"Destination Directory: {dest_dir}")
     
+    if dest_dir and not dest_dir.startswith('/'):
+        full_dest = os.path.abspath(dest_dir)
+        logger.warning(f"Destination '{dest_dir}' is a relative path. Output will be written inside container at '{full_dest}'. To save to your mapped Docker volume, specify '/slideshow/{dest_dir}'.")
+    
     try:
         num_images = int(job.get('num_images', 30))
     except ValueError:
@@ -245,7 +249,7 @@ def process_job(job):
     try:
         for i, asset_id in enumerate(selected_ids, start=1):
             temp_path = os.path.join(temp_dir, f"{asset_id}.jpg")
-            output_filename = f"{i:02d}.jpg"
+            output_filename = f"{i}.jpg"
             full_output_path = os.path.join(dest_dir, output_filename)
             
             logger.info(f"[{i}/{total_to_process}] Downloading asset {asset_id}...")
