@@ -111,15 +111,10 @@ function openModal() {
     document.getElementById('modal-title').textContent = 'New Configuration';
     document.getElementById('test-result').style.display = 'none';
     
-    // Hide API key group entirely if managed by environment variables
     const apiGroup = document.getElementById('api-key-group');
     const apiKeyInput = document.getElementById('job-api-key');
-    if (apiGroup) {
-        apiGroup.style.display = envSettings.env_api_key ? 'none' : 'block';
-        if (envSettings.env_api_key && apiKeyInput) {
-            apiKeyInput.removeAttribute('required');
-        }
-    }
+    if (apiGroup) apiGroup.style.display = 'none';
+    if (apiKeyInput) apiKeyInput.removeAttribute('required');
     
     document.getElementById('config-modal').classList.remove('hidden');
 }
@@ -135,21 +130,16 @@ function editJob(id) {
     document.getElementById('job-id').value = job.id;
     document.getElementById('job-name').value = job.name;
     document.getElementById('job-immich-url').value = job.immich_url;
-    document.getElementById('job-api-key').value = job.api_key;
+    document.getElementById('job-api-key').value = job.api_key || '';
     document.getElementById('job-dest').value = job.dest_dir;
     document.getElementById('job-num').value = job.num_images;
     document.getElementById('job-time').value = job.sync_time || '02:00';
     document.getElementById('test-result').style.display = 'none';
     
-    // Hide API key group entirely if managed by environment variables
     const apiGroup = document.getElementById('api-key-group');
     const apiKeyInput = document.getElementById('job-api-key');
-    if (apiGroup) {
-        apiGroup.style.display = envSettings.env_api_key ? 'none' : 'block';
-        if (envSettings.env_api_key && apiKeyInput) {
-            apiKeyInput.removeAttribute('required');
-        }
-    }
+    if (apiGroup) apiGroup.style.display = 'none';
+    if (apiKeyInput) apiKeyInput.removeAttribute('required');
 
     document.getElementById('modal-title').textContent = 'Edit Configuration';
     document.getElementById('config-modal').classList.remove('hidden');
@@ -159,23 +149,23 @@ async function saveJob(e) {
     e.preventDefault();
     
     const id = document.getElementById('job-id').value;
-    const url = id ? `/api/jobs/${id}` : '/api/jobs';
-    const method = id ? 'PUT' : 'POST';
-    
-    const data = {
+    const jobData = {
         name: document.getElementById('job-name').value,
         immich_url: document.getElementById('job-immich-url').value,
         api_key: document.getElementById('job-api-key').value,
         dest_dir: document.getElementById('job-dest').value,
-        num_images: document.getElementById('job-num').value,
+        num_images: parseInt(document.getElementById('job-num').value),
         sync_time: document.getElementById('job-time').value
     };
     
     try {
+        const url = id ? `/api/jobs/${id}` : '/api/jobs';
+        const method = id ? 'PUT' : 'POST';
+        
         const res = await fetch(url, {
-            method,
+            method: method,
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(data)
+            body: JSON.stringify(jobData)
         });
         
         if (res.ok) {
@@ -215,11 +205,11 @@ async function testConnection() {
     const resultDiv = document.getElementById('test-result');
     const btn = document.getElementById('btn-test-conn');
     
-    if (!url || (!apiKey && !envSettings.env_api_key)) {
+    if (!url) {
         resultDiv.style.display = 'block';
         resultDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
         resultDiv.style.color = '#fca5a5';
-        resultDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter both URL and API Key';
+        resultDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter the Album URL';
         return;
     }
     

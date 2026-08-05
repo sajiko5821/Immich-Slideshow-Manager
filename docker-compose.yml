@@ -4,9 +4,12 @@ services:
   immich_slideshow_manager:
     build: .
     container_name: immich_slideshow_manager
-    # Optional: Set your Immich API Key securely via environment variables
-    # environment:
-    #   - IMMICH_API_KEY=your_api_key_here
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Optional: Set log verbosity level (DEBUG, INFO, WARNING, ERROR)
+      - LOG_LEVEL=INFO
+      # Optional: Set your Immich API Key securely via environment variables
+      # - IMMICH_API_KEY=your_api_key_here
     ports:
       - "5050:5050"
     volumes:
