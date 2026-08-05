@@ -78,10 +78,10 @@ def trigger_job(job_id, job_data):
         save_config(config)
         
     try:
-        # Inject ENV var as fallback if job api_key is empty
+        # Inject ENV var if present, or if job api_key is empty
         job_data_to_run = job_data.copy()
-        if not job_data_to_run.get('api_key') and os.environ.get('IMMICH_API_KEY'):
-            job_data_to_run['api_key'] = os.environ.get('IMMICH_API_KEY')
+        if os.environ.get('IMMICH_API_KEY'):
+            job_data_to_run['api_key'] = os.environ.get('IMMICH_API_KEY').strip().strip('"').strip("'")
             
         count = process_job(job_data_to_run)
         success_status = {'status': 'success', 'message': f'Processed {count} images.'}
