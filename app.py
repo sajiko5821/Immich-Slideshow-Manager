@@ -23,9 +23,9 @@ logging.getLogger('apscheduler').setLevel(logging.WARNING if log_level_name != '
 
 class SuppressPollingFilter(logging.Filter):
     def filter(self, record):
-        # Suppress 5-second status polling from the Web UI to prevent log spam
+        # Suppress status polling requests from the Web UI to prevent log spam
         msg = record.getMessage()
-        if 'GET /api/jobs' in msg or 'GET /favicon.ico' in msg:
+        if '/api/jobs' in msg or 'favicon.ico' in msg:
             return False
         return True
 
