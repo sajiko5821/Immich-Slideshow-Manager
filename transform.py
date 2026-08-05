@@ -3,14 +3,18 @@ import random
 import os
 import shutil
 import tempfile
+import time
+import logging
 from PIL import Image, ImageFilter, ImageEnhance, ExifTags
+
+logger = logging.getLogger('immich_slideshow.transform')
 
 def fetch_album_assets(url, api_key):
     if '/albums/' in url and '/api/albums/' not in url:
         url = url.replace('/albums/', '/api/albums/')
         
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'x-api-key': api_key}
-    print(f"Fetching album data from {url}...")
+    logger.info(f"Fetching album data from endpoint: {url}")
     
     album_id = url.split('/albums/')[-1]
     api_base = url.split('/albums/')[0]
@@ -21,6 +25,7 @@ def fetch_album_assets(url, api_key):
         page = 1
         
         while True:
+            logger.debug(f"Querying Immich API search metadata page {page} for album '{album_id}'...")
             payload = {'albumIds': [album_id], 'size': 1000, 'page': page}
             response = requests.post(search_url, headers=headers, json=payload)
             
@@ -35,33 +40,37 @@ def fetch_album_assets(url, api_key):
                     raise ValueError(f"Found assets, but none have 'id'. Asset keys: {keys}")
                 
                 found_ids.extend(new_ids)
+                logger.debug(f"Page {page}: Retrieved {len(new_ids)} asset IDs (Total so far: {len(found_ids)})")
                 
                 if len(assets) < 1000:
                     break
                     
                 page += 1
             elif response.status_code == 401 or response.status_code == 403:
-                raise ValueError("Authentication failed. Please check your API Key.")
+                raise ValueError("Authentication failed. Please check your Immich API Key permissions.")
             else:
-                raise ValueError(f"Failed to retrieve data. Status Code: {response.status_code} - {response.text}")
+                raise ValueError(f"Failed to retrieve album data. Status Code: {response.status_code} - {response.text}")
                 
+        logger.info(f"Successfully retrieved metadata for {len(found_ids)} total assets from album.")
         return (found_ids, url)
     except Exception as e:
-        print("Error fetching JSON:", str(e))
+        logger.error(f"Error fetching album assets from Immich: {e}")
         raise e
 
 def download_asset(asset_id, base_url, api_key, output_path):
     api_base = base_url.split('/albums/')[0]
     download_url = f"{api_base}/assets/{asset_id}/original"
     
+    logger.debug(f"Downloading original asset {asset_id} from {download_url}...")
     headers = {'Accept': 'application/octet-stream', 'x-api-key': api_key}
     response = requests.get(download_url, headers=headers, stream=True)
     if response.status_code == 200:
         with open(output_path, 'wb') as f:
             for chunk in response.iter_content(1024 * 1024):
                 f.write(chunk)
+        logger.debug(f"Successfully downloaded asset {asset_id} to temporary file.")
     else:
-        raise ValueError(f"Failed to download asset {asset_id}. Status Code: {response.status_code}")
+        raise ValueError(f"Failed to download asset {asset_id}. HTTP Status Code: {response.status_code}")
 
 def clear_directory(directory_path):
     abs_dir = os.path.abspath(directory_path)
@@ -75,18 +84,24 @@ def clear_directory(directory_path):
         raise ValueError(f"CRITICAL ERROR: Attempted to delete workspace parent or current directory {directory_path}")
     
     if not os.path.exists(directory_path):
+        logger.info(f"Creating destination directory: {directory_path}")
         os.makedirs(directory_path, exist_ok=True)
         return
 
+    logger.info(f"Clearing old images in destination directory: {directory_path}")
+    removed_count = 0
     for filename in os.listdir(directory_path):
         file_path = os.path.join(directory_path, filename)
         try:
             if os.path.isfile(file_path) or os.path.islink(file_path):
                 os.unlink(file_path)
+                removed_count += 1
             elif os.path.isdir(file_path):
                 shutil.rmtree(file_path)
+                removed_count += 1
         except Exception as e:
-            print(f"Failed to delete {file_path}. Reason: {e}")
+            logger.warning(f"Failed to delete {file_path}: {e}")
+    logger.debug(f"Removed {removed_count} existing files from {directory_path}.")
 
 def process_image(source_path, output_path, target_width=16, target_height=10, blur_factor=5, background_brightness=0.75):
     try:
@@ -102,12 +117,14 @@ def process_image(source_path, output_path, target_width=16, target_height=10, b
                     break
             
             if orientation in exif:
-                if exif[orientation] == 3:
+                orientation_val = exif[orientation]
+                if orientation_val == 3:
                     image = image.rotate(180, expand=True)
-                elif exif[orientation] == 6:
+                elif orientation_val == 6:
                     image = image.rotate(270, expand=True)
-                elif exif[orientation] == 8:
+                elif orientation_val == 8:
                     image = image.rotate(90, expand=True)
+                logger.debug(f"Applied EXIF orientation rotation ({orientation_val}) for image.")
 
         width, height = image.size
         
@@ -144,24 +161,33 @@ def process_image(source_path, output_path, target_width=16, target_height=10, b
             image.save(output_path, 'JPEG', quality=95)
             
     except Exception as e:
-        print(f"Error processing {source_path}: {e}")
+        logger.error(f"Error processing image {source_path}: {e}")
         raise e
 
 def process_job(job):
+    job_name = job.get('name', 'Unnamed Job')
     immich_url = job.get('immich_url')
     api_key = job.get('api_key')
     dest_dir = job.get('dest_dir')
+    
+    start_time = time.time()
+    logger.info(f"========== Starting Job: '{job_name}' ==========")
+    logger.info(f"Target URL: {immich_url}")
+    logger.info(f"Destination Directory: {dest_dir}")
     
     try:
         num_images = int(job.get('num_images', 30))
     except ValueError:
         num_images = 30
+    logger.info(f"Max images requested: {num_images}")
         
     if not all([immich_url, api_key, dest_dir]):
         safe_job = job.copy()
         if 'api_key' in safe_job and safe_job['api_key']:
             safe_job['api_key'] = '*******************'
-        raise ValueError(f"Job is missing required fields. Job data: {safe_job}")
+        err_msg = f"Job is missing required fields. Job configuration: {safe_job}"
+        logger.error(err_msg)
+        raise ValueError(err_msg)
 
     target_w = 16
     target_h = 10
@@ -171,30 +197,39 @@ def process_job(job):
     all_ids, corrected_url = fetch_album_assets(immich_url, api_key)
     
     if not all_ids:
-        raise RuntimeError("No assets found or failed to fetch album data.")
+        err_msg = f"No assets found or failed to fetch album data from '{immich_url}'."
+        logger.error(err_msg)
+        raise RuntimeError(err_msg)
         
     if len(all_ids) > num_images:
         selected_ids = random.sample(all_ids, num_images)
+        logger.info(f"Album contains {len(all_ids)} total photos. Randomly selected {len(selected_ids)} photos.")
     else:
         selected_ids = all_ids
+        logger.info(f"Album contains {len(all_ids)} total photos. Processing all {len(selected_ids)} photos.")
         
     clear_directory(dest_dir)
     
     temp_dir = tempfile.mkdtemp()
     processed_count = 0
+    failed_count = 0
+    total_to_process = len(selected_ids)
+    
     try:
         for i, asset_id in enumerate(selected_ids, start=1):
             temp_path = os.path.join(temp_dir, f"{asset_id}.jpg")
-            
-            try:
-                download_asset(asset_id, corrected_url, api_key, temp_path)
-            except Exception as e:
-                print(f"Failed to download {asset_id}: {e}")
-                continue
-                
             output_filename = f"{i:02d}.jpg"
             full_output_path = os.path.join(dest_dir, output_filename)
             
+            logger.info(f"[{i}/{total_to_process}] Downloading asset {asset_id}...")
+            try:
+                download_asset(asset_id, corrected_url, api_key, temp_path)
+            except Exception as e:
+                logger.error(f"[{i}/{total_to_process}] Failed to download asset {asset_id}: {e}")
+                failed_count += 1
+                continue
+                
+            logger.info(f"[{i}/{total_to_process}] Processing photo -> {output_filename}...")
             try:
                 process_image(
                     temp_path, 
@@ -206,8 +241,12 @@ def process_job(job):
                 )
                 processed_count += 1
             except Exception as e:
-                print(f"Failed processing {asset_id}: {e}")
+                logger.error(f"[{i}/{total_to_process}] Failed processing asset {asset_id}: {e}")
+                failed_count += 1
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
+    elapsed = time.time() - start_time
+    logger.info(f"========== Finished Job: '{job_name}' in {elapsed:.2f} seconds ==========")
+    logger.info(f"Summary: {processed_count} succeeded, {failed_count} failed out of {total_to_process} requested.")
     return processed_count

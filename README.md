@@ -97,7 +97,14 @@ pip install -r requirements.txt
 python app.py
 ```
 
-## Troubleshooting
+### Viewing Detailed Logs (Unraid / Docker)
+
+When running in Docker or Unraid, click on **Logs** in the Unraid container context menu. 
+- Python standard output buffering is disabled by default (`PYTHONUNBUFFERED=1`), ensuring log lines stream in real-time.
+- You can control log verbosity by adding the `LOG_LEVEL` environment variable in your Unraid container configuration:
+  - `INFO` (Default): Shows job start/end, image count summary, download progress `[i/N]`, and error details.
+  - `DEBUG`: Includes detailed API pagination queries, EXIF orientation rotations, and individual image cropping step diagnostics.
+  - `WARNING` / `ERROR`: Shows only warnings and errors.
 
 ### Config not saving
 Ensure the `/app/data` directory mapping is correctly bound to a persistent folder on your host machine, and that Docker has write permissions to that directory.

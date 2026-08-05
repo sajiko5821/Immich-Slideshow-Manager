@@ -1,9 +1,37 @@
 import os
 import json
 import threading
+import logging
 from flask import Flask, render_template, request, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 from transform import process_job, fetch_album_assets
+
+# Configure logging format and verbosity level
+log_level_name = os.environ.get('LOG_LEVEL', 'INFO').upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
+
+logging.basicConfig(
+    level=log_level,
+    format='[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('immich_slideshow.app')
+
+# Adjust level of third-party library loggers
+logging.getLogger('werkzeug').setLevel(log_level)
+logging.getLogger('apscheduler').setLevel(logging.WARNING if log_level_name != 'DEBUG' else logging.DEBUG)
+
+class SuppressPollingFilter(logging.Filter):
+    def filter(self, record):
+        # Suppress 5-second status polling from the Web UI to prevent log spam
+        msg = record.getMessage()
+        if 'GET /api/jobs' in msg or 'GET /favicon.ico' in msg:
+            return False
+        return True
+
+logging.getLogger('werkzeug').addFilter(SuppressPollingFilter())
+
+logger.info(f"Initializing Immich Digital Photo Frame (LOG_LEVEL={log_level_name})")
 
 app = Flask(__name__)
 
@@ -16,36 +44,54 @@ def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
-                return json.load(f)
-        except json.JSONDecodeError:
+                cfg = json.load(f)
+                logger.info(f"Loaded configuration from '{CONFIG_FILE}'. Found {len(cfg.get('jobs', []))} configured jobs.")
+                return cfg
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing '{CONFIG_FILE}': {e}. Falling back to default empty config.")
             return {'jobs': []}
+    logger.info(f"No config file found at '{CONFIG_FILE}'. Initializing empty configuration.")
     return {'jobs': []}
 
-def save_config(config):
-    # Ensure we don't accidentally save env variables back to disk if they were injected
-    config_to_save = config.copy()
-    if os.environ.get('IMMICH_API_KEY') and 'immich_api_key' in config_to_save:
-        del config_to_save['immich_api_key']
+config_lock = threading.Lock()
 
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(config_to_save, f, indent=4)
+def save_config(config):
+    with config_lock:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=4)
+        logger.debug("Configuration file updated successfully.")
 
 config = load_config()
 
 job_status = {}
 
 def trigger_job(job_id, job_data):
+    job_name = job_data.get('name', f'Job #{job_id}')
+    logger.info(f"Starting execution of sync job '{job_name}' (ID: {job_id})...")
     job_status[job_id] = {'status': 'running', 'message': 'Processing images...'}
+    
+    def save_job_status(status_obj):
+        for j in config.get('jobs', []):
+            if str(j['id']) == str(job_id):
+                j['last_status'] = status_obj
+                break
+        save_config(config)
+        
     try:
-        # Inject ENV vars if they exist so transform.py can use them
+        # Inject ENV var as fallback if job api_key is empty
         job_data_to_run = job_data.copy()
-        if os.environ.get('IMMICH_API_KEY'):
+        if not job_data_to_run.get('api_key') and os.environ.get('IMMICH_API_KEY'):
             job_data_to_run['api_key'] = os.environ.get('IMMICH_API_KEY')
             
         count = process_job(job_data_to_run)
-        job_status[job_id] = {'status': 'success', 'message': f'Processed {count} images.'}
+        success_status = {'status': 'success', 'message': f'Processed {count} images.'}
+        job_status[job_id] = success_status
+        save_job_status(success_status)
     except Exception as e:
-        job_status[job_id] = {'status': 'error', 'message': str(e)}
+        logger.error(f"Sync job '{job_name}' (ID: {job_id}) encountered an error: {e}", exc_info=True)
+        error_status = {'status': 'error', 'message': str(e)}
+        job_status[job_id] = error_status
+        save_job_status(error_status)
 
 def schedule_job(job):
     job_id = f"sync_job_{job['id']}"
@@ -60,24 +106,25 @@ def schedule_job(job):
         scheduler.remove_job(job_id)
         
     scheduler.add_job(
-        func=process_job,
+        func=trigger_job,
         trigger="cron",
         hour=hour,
         minute=minute,
         id=job_id,
-        args=[job],
+        args=[job['id'], job],
         replace_existing=True
     )
-    print(f"Scheduled job {job['name']} to run daily at {hour:02d}:{minute:02d}.")
+    logger.info(f"Scheduled job '{job['name']}' (ID: {job['id']}) to run daily at {hour:02d}:{minute:02d} cron time.")
 
 def unschedule_job(job_id):
     sched_id = f"sync_job_{job_id}"
     if scheduler.get_job(sched_id):
         scheduler.remove_job(sched_id)
-        print(f"Removed scheduled job {sched_id}.")
+        logger.info(f"Removed scheduled job ID {job_id}.")
 
 scheduler = BackgroundScheduler()
 scheduler.start()
+logger.info("Background job scheduler started.")
 
 # Schedule all loaded jobs on startup
 for job in config.get('jobs', []):
@@ -107,14 +154,17 @@ def handle_jobs():
         jobs_with_status = []
         for job in config.get('jobs', []):
             job_copy = job.copy()
-            status_info = job_status.get(job['id'], {'status': 'idle', 'message': ''})
+            
+            # Check if currently running in memory
+            if job['id'] in job_status and job_status[job['id']]['status'] == 'running':
+                status_info = job_status[job['id']]
+            else:
+                # Fallback to saved status
+                status_info = job.get('last_status', {'status': 'idle', 'message': ''})
+                
             job_copy['last_status'] = status_info['status']
             job_copy['last_message'] = status_info['message']
-            
-            # Mask API key if it's from env
-            if os.environ.get('IMMICH_API_KEY'):
-                job_copy['api_key'] = '*******************'
-                job_copy['env_api_key'] = True
+            job_copy['has_env_api_key'] = bool(os.environ.get('IMMICH_API_KEY'))
                 
             jobs_with_status.append(job_copy)
         return jsonify(jobs_with_status)
@@ -134,6 +184,7 @@ def handle_jobs():
         config['jobs'].append(new_job)
         save_config(config)
         schedule_job(new_job)
+        logger.info(f"Created new sync job '{new_job['name']}' (ID: {new_id}).")
         return jsonify({'success': True, 'job': new_job})
 
 @app.route('/api/jobs/<int:job_id>', methods=['PUT', 'DELETE'])
@@ -145,22 +196,25 @@ def manage_job(job_id):
         unschedule_job(job_id)
         if job_id in job_status:
             del job_status[job_id]
+        logger.info(f"Deleted job ID {job_id}.")
         return jsonify({'success': True})
         
     if request.method == 'PUT':
         job_data = request.json
         for job in config['jobs']:
             if job['id'] == job_id:
+                api_key = job_data.get('api_key') or job.get('api_key', '')
                 job.update({
                     'name': job_data.get('name', job['name']),
                     'immich_url': job_data.get('immich_url', job['immich_url']),
-                    'api_key': job_data.get('api_key', job['api_key']),
+                    'api_key': api_key,
                     'dest_dir': job_data.get('dest_dir', job['dest_dir']),
                     'num_images': int(job_data.get('num_images', job['num_images'])),
                     'sync_time': job_data.get('sync_time', job.get('sync_time', '02:00'))
                 })
                 save_config(config)
                 schedule_job(job)
+                logger.info(f"Updated configuration for job '{job['name']}' (ID: {job_id}).")
                 return jsonify({'success': True, 'job': job})
         return jsonify({'success': False, 'error': 'Job not found'})
 
@@ -168,8 +222,10 @@ def manage_job(job_id):
 def trigger_job_endpoint(job_id):
     job = next((j for j in config['jobs'] if j['id'] == job_id), None)
     if not job:
+        logger.warning(f"Manual trigger requested for non-existent job ID {job_id}.")
         return jsonify({'success': False, 'error': 'Job not found'})
     
+    logger.info(f"Received manual trigger request for job '{job['name']}' (ID: {job_id}).")
     thread = threading.Thread(target=trigger_job, args=(job_id, job))
     thread.start()
     return jsonify({'success': True, 'message': 'Job started'})
@@ -183,19 +239,24 @@ def test_connection():
     if not immich_url or not api_key:
         return jsonify({'success': False, 'error': 'Please enter both URL and API Key (or set the IMMICH_API_KEY environment variable).'})
         
+    logger.info(f"Testing Immich connection to: {immich_url}")
     try:
         assets, corrected_url = fetch_album_assets(immich_url, api_key)
         if assets:
+            logger.info(f"Connection test successful for {corrected_url}. Found {len(assets)} assets.")
             return jsonify({
                 'success': True, 
                 'message': f'Connection successful! Found {len(assets)} images in album.',
                 'corrected_url': corrected_url
             })
         else:
+            logger.warning(f"Connection test connected to {corrected_url}, but returned no assets.")
             return jsonify({'success': False, 'error': 'Connected, but no assets found or invalid album.'})
     except Exception as e:
+        logger.error(f"Connection test failed for {immich_url}: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
+    logger.info(f"Starting Web Server on host 0.0.0.0, port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
