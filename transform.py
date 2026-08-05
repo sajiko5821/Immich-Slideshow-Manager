@@ -13,13 +13,36 @@ def fetch_album_assets(url, api_key):
     if '/albums/' in url and '/api/albums/' not in url:
         url = url.replace('/albums/', '/api/albums/')
         
-    headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'x-api-key': api_key}
+    headers = {
+        'Accept': 'application/json', 
+        'Content-Type': 'application/json', 
+        'x-api-key': api_key,
+        'Authorization': f'Bearer {api_key}'
+    }
     logger.info(f"Fetching album data from endpoint: {url}")
     
-    album_id = url.split('/albums/')[-1]
+    album_id = url.split('/albums/')[-1].split('?')[0].rstrip('/')
     api_base = url.split('/albums/')[0]
+
+    # Method 1: Try Direct Album Endpoint (GET /api/albums/{album_id})
+    album_endpoint = f"{api_base}/albums/{album_id}"
+    try:
+        logger.debug(f"Attempting direct album fetch from {album_endpoint}...")
+        resp = requests.get(album_endpoint, headers=headers)
+        if resp.status_code == 200:
+            data = resp.json()
+            assets = data.get('assets', [])
+            asset_ids = [a.get('id') for a in assets if a.get('id')]
+            if asset_ids:
+                logger.info(f"Successfully retrieved {len(asset_ids)} assets directly from album endpoint.")
+                return (asset_ids, url)
+        elif resp.status_code in (401, 403):
+            logger.debug(f"Direct album endpoint returned HTTP {resp.status_code}, trying metadata search...")
+    except Exception as e:
+        logger.debug(f"Direct album fetch failed ({e}), trying metadata search endpoint...")
+
+    # Method 2: Search Metadata Endpoint (POST /api/search/metadata)
     search_url = f"{api_base}/search/metadata"
-    
     try:
         found_ids = []
         page = 1
@@ -46,8 +69,8 @@ def fetch_album_assets(url, api_key):
                     break
                     
                 page += 1
-            elif response.status_code == 401 or response.status_code == 403:
-                raise ValueError("Authentication failed. Please check your Immich API Key permissions.")
+            elif response.status_code in (401, 403):
+                raise ValueError(f"Authentication failed (HTTP {response.status_code}). Please check your Immich API Key and permissions.")
             else:
                 raise ValueError(f"Failed to retrieve album data. Status Code: {response.status_code} - {response.text}")
                 
@@ -62,7 +85,11 @@ def download_asset(asset_id, base_url, api_key, output_path):
     download_url = f"{api_base}/assets/{asset_id}/original"
     
     logger.debug(f"Downloading original asset {asset_id} from {download_url}...")
-    headers = {'Accept': 'application/octet-stream', 'x-api-key': api_key}
+    headers = {
+        'Accept': 'application/octet-stream', 
+        'x-api-key': api_key,
+        'Authorization': f'Bearer {api_key}'
+    }
     response = requests.get(download_url, headers=headers, stream=True)
     if response.status_code == 200:
         with open(output_path, 'wb') as f:
