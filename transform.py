@@ -10,39 +10,28 @@ from PIL import Image, ImageFilter, ImageEnhance, ExifTags
 logger = logging.getLogger('immich_slideshow.transform')
 
 def fetch_album_assets(url, api_key):
+    if api_key:
+        api_key = api_key.strip().strip('"').strip("'")
+
     if '/albums/' in url and '/api/albums/' not in url:
         url = url.replace('/albums/', '/api/albums/')
         
+    album_id = url.split('/albums/')[-1].split('?')[0].rstrip('/')
+    raw_base = url.split('/albums/')[0].rstrip('/')
+    if not raw_base.endswith('/api'):
+        api_base_url = f"{raw_base}/api"
+    else:
+        api_base_url = raw_base
+
     headers = {
         'Accept': 'application/json', 
         'Content-Type': 'application/json', 
-        'x-api-key': api_key,
-        'Authorization': f'Bearer {api_key}'
+        'x-api-key': api_key
     }
-    logger.info(f"Fetching album data from endpoint: {url}")
+
+    logger.info(f"Fetching album '{album_id}' from Immich endpoint: {api_base_url}")
+    search_url = f"{api_base_url}/search/metadata"
     
-    album_id = url.split('/albums/')[-1].split('?')[0].rstrip('/')
-    api_base = url.split('/albums/')[0]
-
-    # Method 1: Try Direct Album Endpoint (GET /api/albums/{album_id})
-    album_endpoint = f"{api_base}/albums/{album_id}"
-    try:
-        logger.debug(f"Attempting direct album fetch from {album_endpoint}...")
-        resp = requests.get(album_endpoint, headers=headers)
-        if resp.status_code == 200:
-            data = resp.json()
-            assets = data.get('assets', [])
-            asset_ids = [a.get('id') for a in assets if a.get('id')]
-            if asset_ids:
-                logger.info(f"Successfully retrieved {len(asset_ids)} assets directly from album endpoint.")
-                return (asset_ids, url)
-        elif resp.status_code in (401, 403):
-            logger.debug(f"Direct album endpoint returned HTTP {resp.status_code}, trying metadata search...")
-    except Exception as e:
-        logger.debug(f"Direct album fetch failed ({e}), trying metadata search endpoint...")
-
-    # Method 2: Search Metadata Endpoint (POST /api/search/metadata)
-    search_url = f"{api_base}/search/metadata"
     try:
         found_ids = []
         page = 1
@@ -50,7 +39,7 @@ def fetch_album_assets(url, api_key):
         while True:
             logger.debug(f"Querying Immich API search metadata page {page} for album '{album_id}'...")
             payload = {'albumIds': [album_id], 'size': 1000, 'page': page}
-            response = requests.post(search_url, headers=headers, json=payload)
+            response = requests.post(search_url, headers=headers, json=payload, timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
@@ -70,7 +59,7 @@ def fetch_album_assets(url, api_key):
                     
                 page += 1
             elif response.status_code in (401, 403):
-                raise ValueError(f"Authentication failed (HTTP {response.status_code}). Please check your Immich API Key and permissions.")
+                raise ValueError(f"Authentication failed (HTTP {response.status_code}). Please verify your Immich API Key and permissions.")
             else:
                 raise ValueError(f"Failed to retrieve album data. Status Code: {response.status_code} - {response.text}")
                 
@@ -81,14 +70,19 @@ def fetch_album_assets(url, api_key):
         raise e
 
 def download_asset(asset_id, base_url, api_key, output_path):
-    api_base = base_url.split('/albums/')[0]
-    download_url = f"{api_base}/assets/{asset_id}/original"
+    if api_key:
+        api_key = api_key.strip().strip('"').strip("'")
+
+    raw_base = base_url.split('/albums/')[0].rstrip('/')
+    if not raw_base.endswith('/api'):
+        raw_base = f"{raw_base}/api"
+        
+    download_url = f"{raw_base}/assets/{asset_id}/original"
     
     logger.debug(f"Downloading original asset {asset_id} from {download_url}...")
     headers = {
         'Accept': 'application/octet-stream', 
-        'x-api-key': api_key,
-        'Authorization': f'Bearer {api_key}'
+        'x-api-key': api_key
     }
     response = requests.get(download_url, headers=headers, stream=True)
     if response.status_code == 200:
